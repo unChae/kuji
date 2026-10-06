@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LiveKuji Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --info: #38bdf8;
+      --border: rgba(148, 163, 184, 0.2);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(180deg, #020817, #0f172a 30%, #111827);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 2rem;
+    }
+
+    .sub {
+      color: var(--muted);
+      margin-bottom: 26px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 16px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .label {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .value {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .panel {
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+
+    .panel h2 {
+      margin: 0 0 16px;
+      font-size: 1.1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(34, 197, 94, 0.18);
+      color: #bbf7d0;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+    }
+
+    .pill.warn {
+      background: rgba(245, 158, 11, 0.12);
+      color: #fcd34d;
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+
+    .pill.danger {
+      background: rgba(239, 68, 68, 0.14);
+      color: #fecaca;
+      border-color: rgba(239, 68, 68, 0.35);
+    }
+
+    .muted { color: var(--muted); }
+    .up { color: #86efac; }
+    .down { color: #fca5a5; }
+
+    .select-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    select {
+      background: var(--panel-2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>LiveKuji 변화 대시보드</h1>
+    <div class="sub">신규 항목, 재고 변화, 품절 여부를 한눈에 확인합니다.</div>
+
+    <div class="select-wrap">
+      <label for="snapshotSelect">스냅샷 선택</label>
+      <select id="snapshotSelect"></select>
+    </div>
+
+    <div class="cards" id="summaryCards"></div>
+
+    <div class="panel">
+      <h2>변화 표</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>상품명</th>
+              <th>이전</th>
+              <th>현재</th>
+              <th>변화</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody id="changeTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>신규 추가 항목</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>상품명</th>
+              <th>남은 수량</th>
+              <th>총 수량</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody id="newItemsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>최신 스냅샷</h2>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>상품명</th>
+              <th>남은 수량</th>
+              <th>총 수량</th>
+              <th>품절</th>
+              <th>수집시각</th>
+            </tr>
+          </thead>
+          <tbody id="latestTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function csvToRows(text) {
+      const rows = [];
+      let row = [];
+      let value = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i += 1) {
+        const ch = text[i];
+
+        if (ch === '"') {
+          if (inQuotes && text[i + 1] === '"') {
+            value += '"';
+            i += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (ch === ',' && !inQuotes) {
+          row.push(value);
+          value = '';
+        } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+          if (ch === '\r' && text[i + 1] === '\n') {
+            i += 1;
+          }
+          row.push(value);
+          const trimmed = row.map(cell => cell.trim());
+          if (trimmed.some(cell => cell !== '')) {
+            rows.push(trimmed);
+          }
+          row = [];
+          value = '';
+        } else {
+          value += ch;
+        }
+      }
+
+      if (value !== '' || row.length > 0) {
+        row.push(value);
+        const trimmed = row.map(cell => cell.trim());
+        if (trimmed.some(cell => cell !== '')) {
+          rows.push(trimmed);
+        }
+      }
+
+      return rows;
+    }
+
+    function parseCSV(text) {
+      const rows = csvToRows(text);
+      if (!rows.length) return [];
+
+      const headers = rows[0].map(header => header.trim());
+      return rows.slice(1).map(row => {
+        const record = {};
+        headers.forEach((header, idx) => {
+          record[header] = (row[idx] ?? '').trim();
+        });
+        return record;
+      });
+    }
+
+    function normalizeItem(item) {
+      const title = (item.title || '').trim();
+      const remaining = Number(item.remaining_count || item.remaining || 0);
+      const total = Number(item.total_count || item.total || 0);
+      const soldOut = String(item.sold_out || '').toLowerCase() === 'true';
+      return {
+        ...item,
+        title,
+        remaining,
+        total,
+        soldOut,
+      };
+    }
+
+    function keyForItem(item) {
+      return (item.title || '').trim().toLowerCase();
+    }
+
+    function buildPrevMap(rows) {
+      return new Map(rows.map(row => [keyForItem(row), row]));
+    }
+
+    async function loadSnapshots() {
+      const manifestResp = await fetch('data/manifest.json');
+      if (!manifestResp.ok) {
+        throw new Error('manifest.json not found');
+      }
+
+      const manifest = await manifestResp.json();
+      const snapshots = [];
+
+      for (const file of manifest) {
+        const response = await fetch(`data/${file}`);
+        if (!response.ok) {
+          continue;
+        }
+        const csv = await response.text();
+        const rows = parseCSV(csv).map(normalizeItem);
+        snapshots.push({ file, rows });
+      }
+
+      snapshots.sort((a, b) => b.file.localeCompare(a.file));
+      return snapshots;
+    }
+
+    function renderSummary(latest, prev) {
+      const prevMap = prev ? buildPrevMap(prev.rows) : new Map();
+      const total = latest.rows.length;
+      const soldOut = latest.rows.filter(item => item.soldOut).length;
+      const newItems = prev ? latest.rows.filter(item => !prevMap.has(keyForItem(item))).length : total;
+      const changed = prev ? latest.rows.filter(item => {
+        const prevItem = prevMap.get(keyForItem(item));
+        if (!prevItem) return false;
+        return Number(prevItem.remaining_count || prevItem.remaining || 0) !== Number(item.remaining_count || item.remaining || 0)
+          || String(prevItem.sold_out || '').toLowerCase() !== String(item.sold_out || '').toLowerCase();
+      }).length : 0;
+
+      const cards = [
+        { label: '총 품목', value: total },
+        { label: '품절 수', value: soldOut },
+        { label: '신규 항목', value: newItems },
+        { label: '변화 항목', value: changed }
+      ];
+
+      document.getElementById('summaryCards').innerHTML = cards.map(card => `
+        <div class="card">
+          <div class="label">${card.label}</div>
+          <div class="value">${card.value}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderChangeTable(latest, prev) {
+      const tbody = document.getElementById('changeTableBody');
+      if (!prev) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">비교 대상 스냅샷이 없습니다.</td></tr>';
+        return;
+      }
+
+      const prevMap = buildPrevMap(prev.rows);
+      const items = latest.rows.filter(item => {
+        const prevItem = prevMap.get(keyForItem(item));
+        if (!prevItem) return false;
+        return Number(prevItem.remaining_count || prevItem.remaining || 0) !== Number(item.remaining_count || item.remaining || 0)
+          || String(prevItem.sold_out || '').toLowerCase() !== String(item.sold_out || '').toLowerCase();
+      });
+
+      if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">변화된 항목이 없습니다.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = items.map(item => {
+        const prevItem = prevMap.get(keyForItem(item));
+        const before = Number(prevItem ? (prevItem.remaining_count || prevItem.remaining || 0) : 0);
+        const after = Number(item.remaining_count || item.remaining || 0);
+        const diff = after - before;
+        const dirClass = diff > 0 ? 'up' : diff < 0 ? 'down' : 'muted';
+        const status = item.soldOut ? '<span class="pill danger">품절</span>' : '<span class="pill">판매중</span>';
+
+        return `
+          <tr>
+            <td>${item.title || '-'}</td>
+            <td>${before}</td>
+            <td>${after}</td>
+            <td class="${dirClass}">${diff >= 0 ? '+' : ''}${diff}</td>
+            <td>${status}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderNewItems(latest, prev) {
+      const tbody = document.getElementById('newItemsBody');
+      if (!prev) {
+        tbody.innerHTML = '<tr><td colspan="4" class="muted">비교 대상 스냅샷이 없습니다.</td></tr>';
+        return;
+      }
+
+      const prevMap = buildPrevMap(prev.rows);
+      const items = latest.rows.filter(item => !prevMap.has(keyForItem(item)));
+
+      if (!items.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="muted">신규 항목이 없습니다.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = items.map(item => `
+        <tr>
+          <td>${item.title || '-'}</td>
+          <td>${item.remaining}</td>
+          <td>${item.total}</td>
+          <td>${item.soldOut ? '<span class="pill danger">품절</span>' : '<span class="pill">판매중</span>'}</td>
+        </tr>
+      `).join('');
+    }
+
+    function renderLatestTable(latest) {
+      const tbody = document.getElementById('latestTableBody');
+      tbody.innerHTML = latest.rows.slice(0, 80).map(item => `
+        <tr>
+          <td>${item.title || '-'}</td>
+          <td>${item.remaining}</td>
+          <td>${item.total}</td>
+          <td>${item.soldOut ? '<span class="pill danger">품절</span>' : '<span class="pill">판매중</span>'}</td>
+          <td>${item.collected_at || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function init() {
+      const snapshots = await loadSnapshots();
+      const select = document.getElementById('snapshotSelect');
+
+      if (!snapshots.length) {
+        document.body.innerHTML = '<div style="padding:40px;color:white;">CSV 스냅샷이 없습니다.</div>';
+        return;
+      }
+
+      snapshots.forEach((snapshot, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = snapshot.file;
+        select.appendChild(option);
+      });
+
+      function renderSelected(index) {
+        const selected = snapshots[index];
+        const prev = snapshots[index + 1] || null;
+        renderSummary(selected, prev);
+        renderChangeTable(selected, prev);
+        renderNewItems(selected, prev);
+        renderLatestTable(selected);
+      }
+
+      select.addEventListener('change', (event) => {
+        renderSelected(Number(event.target.value));
+      });
+
+      renderSelected(0);
+    }
+
+    init().catch(error => {
+      console.error(error);
+      document.body.innerHTML = '<div style="padding:40px;color:white;">대시보드를 불러오지 못했습니다. data/manifest.json과 CSV 파일을 확인해주세요.</div>';
+    });
+  </script>
+</body>
+</html>
