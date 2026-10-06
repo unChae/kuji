@@ -37,6 +37,28 @@
     h1 { margin: 0 0 10px; font-size: 2rem; }
     .sub { color: var(--muted); margin-bottom: 26px; }
 
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .summary-card {
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+    }
+
+    .summary-label { color: var(--muted); font-size: 13px; }
+    .summary-value { font-size: 1.8rem; font-weight: 700; margin-top: 8px; }
+    .summary-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+    @media (max-width: 640px) {
+      .summary-grid { grid-template-columns: 1fr; }
+    }
+
     .tabs {
       display: flex;
       gap: 8px;
@@ -195,6 +217,19 @@
     <h1>LiveKuji 판매 이력 분석</h1>
     <div class="sub">상품별 재고 변화와 판매 완료 이력을 추적합니다</div>
 
+    <div class="summary-grid" aria-label="최근 스냅샷 판매 추정">
+      <div class="summary-card">
+        <div class="summary-label">최근 10개 CSV 판매 수량 추정</div>
+        <div class="summary-value" id="estimatedSoldCount">-</div>
+        <div class="summary-note" id="salesWindowNote"></div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">최근 10개 CSV 매출 추정</div>
+        <div class="summary-value" id="estimatedRevenue">-</div>
+        <div class="summary-note" id="revenueWindowNote"></div>
+      </div>
+    </div>
+
     <div class="tabs">
       <button class="tab-btn active" data-tab="live">판매중 상품</button>
       <button class="tab-btn" data-tab="completed">판매완료 상품</button>
@@ -243,8 +278,10 @@
           <thead>
             <tr>
               <th>상품명</th>
+              <th>판매점포</th>
               <th>남은 수량</th>
               <th>총 수량</th>
+              <th>가격</th>
               <th>판매율</th>
               <th>상태</th>
             </tr>
@@ -314,11 +351,16 @@
     }
 
     function normalizeItem(item) {
+      const rawText = item.raw_text || item.status_text || '';
+      const storeMarker = rawText.match(/즉시구매|ON공식쿠지/i);
+      const parsedStore = storeMarker ? rawText.slice(0, storeMarker.index) : '';
       return {
         ...item,
         title: (item.title || '').trim(),
+        store: (item.store || parsedStore).trim(),
         remaining: Number(item.remaining_count || 0),
         total: Number(item.total_count || 0),
+        priceKrw: item.price_krw ? Number(item.price_krw) : null,
         soldOut: String(item.sold_out || '').toLowerCase() === 'true',
         collected_at: item.collected_at || '',
       };
@@ -326,6 +368,62 @@
 
     function keyForItem(item) {
       return (item.title || '').toLowerCase();
+    }
+
+    function estimateSales(snaps) {
+      const window = snaps.slice(0, 10).slice().reverse();
+      let soldCount = 0;
+      let pricedSoldCount = 0;
+      let revenueKrw = 0;
+
+      for (let i = 1; i < window.length; i += 1) {
+        const previousByTitle = new Map();
+        const currentByTitle = new Map();
+        for (const item of window[i - 1].rows) {
+          const key = keyForItem(item);
+          if (key && !previousByTitle.has(key)) previousByTitle.set(key, item);
+        }
+        for (const item of window[i].rows) {
+          const key = keyForItem(item);
+          if (key && !currentByTitle.has(key)) currentByTitle.set(key, item);
+        }
+
+        for (const [key, previous] of previousByTitle) {
+          const current = currentByTitle.get(key);
+          if (!current) continue;
+          const decrease = Math.max(previous.remaining - current.remaining, 0);
+          if (decrease === 0) continue;
+
+          soldCount += decrease;
+          const unitPrice = current.priceKrw ?? previous.priceKrw;
+          if (unitPrice != null) {
+            pricedSoldCount += decrease;
+            revenueKrw += decrease * unitPrice;
+          }
+        }
+      }
+
+      return {
+        soldCount,
+        pricedSoldCount,
+        revenueKrw,
+        snapshotCount: window.length,
+        hasAnyPrices: window.some(snapshot => snapshot.rows.some(item => item.priceKrw != null)),
+      };
+    }
+
+    function renderSalesSummary() {
+      const estimate = estimateSales(snapshots);
+      const numberFormat = new Intl.NumberFormat('ko-KR');
+      document.getElementById('estimatedSoldCount').textContent = `${numberFormat.format(estimate.soldCount)}장`;
+      document.getElementById('estimatedRevenue').textContent =
+        estimate.pricedSoldCount > 0 || estimate.hasAnyPrices
+          ? `₩${numberFormat.format(estimate.revenueKrw)}`
+          : '가격 데이터 없음';
+      document.getElementById('salesWindowNote').textContent =
+        `${estimate.snapshotCount}개 스냅샷에서 연속 기록에 모두 있는 상품의 재고 감소분 합계`;
+      document.getElementById('revenueWindowNote').textContent =
+        `단가 확인 판매 ${numberFormat.format(estimate.pricedSoldCount)}장분 · 가격 누락분 제외`;
     }
 
     async function loadSnapshots() {
@@ -453,7 +551,9 @@
         <div class="card" onclick="selectLiveItem(${idx})">
           <div class="card-title">${item.title}</div>
           <div class="card-meta">
+            <span>판매점포: ${item.store || '미확인'}</span>
             <span>남은 수량: ${item.remaining} / ${item.total}</span>
+            <span>${item.priceKrw != null ? `₩${item.priceKrw.toLocaleString('ko-KR')}` : '가격 미확인'}</span>
             <span>${Math.round((item.remaining / item.total) * 100)}%</span>
           </div>
         </div>
@@ -563,8 +663,10 @@
         return `
           <tr>
             <td>${item.title}</td>
+            <td>${item.store || '-'}</td>
             <td>${item.remaining}</td>
             <td>${item.total}</td>
+            <td>${item.priceKrw != null ? `₩${item.priceKrw.toLocaleString('ko-KR')}` : '-'}</td>
             <td>${rate}%</td>
             <td>${status}</td>
           </tr>
@@ -580,6 +682,7 @@
         return;
       }
 
+      renderSalesSummary();
       renderLiveList();
       renderCompletedList();
       renderHistory();

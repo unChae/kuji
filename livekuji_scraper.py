@@ -119,17 +119,44 @@ def extract_cards(page):
               const fullText = (node.textContent || '').replace(/\s+/g, ' ').trim();
               if (!fullText || fullText.length < 12 || fullText.length > 400) continue;
 
-              // "남은 X / Y장" 패턴이 반드시 있어야 함
+              // 재고 수량 또는 명시적인 품절 상태가 있어야 상품 후보로 본다.
               const stockMatch = fullText.match(/남은\s*(\d+)\s*\/\s*(\d+)\s*장/i);
-              if (!stockMatch) continue;
+              const soldOutText = /품절|SOLD OUT|out of stock/i.test(fullText);
+              if (!stockMatch && !soldOutText) continue;
+
+              // 가격은 원화 기준 정수로 저장한다 (예: ₩13,000 / 1장, 13,000원).
+              const priceMatch = fullText.match(/₩\s*([\d,]+)|([\d,]+)\s*(?:원|KRW)/i);
+              const priceKrw = priceMatch
+                ? parseInt((priceMatch[1] || priceMatch[2]).replace(/,/g, ''), 10)
+                : null;
+              let storeSourceText = fullText;
+              if (!/즉시구매|ON공식쿠지/i.test(storeSourceText)) {
+                let parent = node.parentElement;
+                while (parent) {
+                  const parentText = (parent.textContent || '').replace(/\s+/g, ' ').trim();
+                  if (parentText.length > 400) break;
+                  if (/즉시구매|ON공식쿠지/i.test(parentText)
+                      && (/남은\s*\d+\s*\/\s*\d+\s*장/i.test(parentText) || /품절|SOLD OUT|out of stock/i.test(parentText))) {
+                    storeSourceText = parentText;
+                    break;
+                  }
+                  parent = parent.parentElement;
+                }
+              }
+              const storeMarker = storeSourceText.match(/즉시구매|ON공식쿠지/i);
+              const store = storeMarker
+                ? storeSourceText.slice(0, storeMarker.index).trim()
+                : '';
               
               // 기본 필터
               const hasPrice = /\d[\d,]*(원|krw|₩)/i.test(fullText);
               const hasAction = /참여하기!|구매하기|Buy|Join/i.test(fullText);
-              if (!hasPrice && !hasAction) continue;
+              if (!hasPrice && !hasAction && !soldOutText) continue;
 
-              // 제목 추출: "남은 X / Y장" 이전 부분만
-              const titlePart = fullText.split(/남은\s*\d+\s*\/\s*\d+\s*장/i)[0];
+              // 제목은 재고나 품절 표시 앞부분에서 가져온다.
+              const titlePart = stockMatch
+                ? fullText.split(/남은\s*\d+\s*\/\s*\d+\s*장/i)[0]
+                : fullText.split(/품절|SOLD OUT|out of stock/i)[0];
               let title = titlePart
                 .replace(/^(피가쿠지|KUJI-PLAY|즉시구매|공식쿠지|2쿠지|쿠지|구매|공식|마켓|토이|모리|라이브온|LIVE ON|OZ)+\\s*/gi, '')
                 .replace(/^(set\\.|set\\))+\\s*/gi, '')
@@ -143,7 +170,7 @@ def extract_cards(page):
               if (!title || title.length < 2 || /^[^가-힣A-Za-z0-9]+$/.test(title)) continue;
 
               const href = node.href || node.querySelector('a')?.href || '';
-              const key = (href || fullText).slice(0, 200);
+              const key = (href || `${store.toLowerCase()}|${title.toLowerCase()}`).slice(0, 200);
               if (seen.has(key)) continue;
               seen.add(key);
 
@@ -151,9 +178,11 @@ def extract_cards(page):
                 text: fullText,
                 href,
                 title: title,
-                remaining: parseInt(stockMatch[1], 10),
-                total: parseInt(stockMatch[2], 10),
-                hasSoldOut: /품절|SOLD OUT|out of stock/i.test(fullText) && parseInt(stockMatch[1], 10) === 0,
+                store: store,
+                price_krw: priceKrw,
+                remaining: stockMatch ? parseInt(stockMatch[1], 10) : 0,
+                total: stockMatch ? parseInt(stockMatch[2], 10) : null,
+                hasSoldOut: soldOutText || (stockMatch && parseInt(stockMatch[1], 10) === 0),
               });
             }
           }
@@ -204,8 +233,8 @@ def click_more_if_exists(page):
     for i in range(buttons.count()):
         btn = buttons.nth(i)
         text = normalize_text(btn.text_content())
-        low = text.lower()
-        if "더보기" in text or "more" in low or "view more" in low or "more products" in low:
+        compact = re.sub(r"\s+", "", text).lower()
+        if "더보기" in compact or "more" in compact or "viewmore" in compact or "moreproducts" in compact:
             try:
                 btn.scroll_into_view_if_needed()
                 btn.click(timeout=5000)
@@ -267,20 +296,24 @@ def close_modal_if_any(page):
 def clean_card(entry):
     """extract_cards에서 받은 데이터를 정제해서 CSV 행으로 변환"""
     title = normalize_text(entry.get("title") or "")
+    store = normalize_text(entry.get("store") or "")
     text = normalize_text(entry.get("text") or "")
     
     # extract_cards에서 이미 추출한 값 사용
     remaining = entry.get("remaining")
     total = entry.get("total")
+    price_krw = entry.get("price_krw")
     
     sold_out = bool(entry.get("hasSoldOut"))
 
     result = {
         "title": title[:200],
+        "store": store[:100],
         "href": entry.get("href") or "",
         "sold_out": sold_out,
         "remaining_count": remaining,
         "total_count": total,
+        "price_krw": price_krw,
         "status_text": text[:300],
         "raw_text": text[:500],
         "collected_at": datetime.now().isoformat(timespec="seconds"),
@@ -299,13 +332,32 @@ def clean_card(entry):
 def main():
     output_path = csv_output_path()
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False, args=["--start-maximized"])
+        # GitHub Actions has no display; retain the visible browser for local runs.
+        headless = os.environ.get("CI", "").lower() == "true"
+        browser = p.chromium.launch(headless=headless, args=["--start-maximized"])
         page = browser.new_page(viewport={"width": 1600, "height": 2200}, locale="ko-KR")
         page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
-        print("[LOAD] 페이지 로드 완료, 5초 대기 중...")
+        print("[LOAD] 페이지 로드 완료, 상품 카드 로딩 대기 중...")
         page.wait_for_timeout(5000)
         close_modal_if_any(page)
         page.wait_for_timeout(1000)
+
+        # The site renders its product grid asynchronously after the initial page load.
+        try:
+            page.wait_for_function(
+                r"""() => Array.from(document.querySelectorAll('div, article, li, a')).some(node => {
+                    const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+                    const hasStock = /남은\s*\d+\s*\/\s*\d+\s*장/i.test(text);
+                    const hasSoldOut = /품절|SOLD OUT|out of stock/i.test(text);
+                    return text.length >= 12 && text.length <= 400
+                        && (hasStock || hasSoldOut)
+                        && (/참여하기!|구매하기|Buy|Join/i.test(text) || hasSoldOut);
+                })""",
+                timeout=45000,
+            )
+            print("[LOAD] 상품 카드가 화면에 나타났습니다.")
+        except Exception as e:
+            print(f"[WAIT][WARN] 상품 카드 대기 시간 초과 또는 오류: {e}")
 
         rows = []
         seen_keys = set()
@@ -331,13 +383,20 @@ def main():
 
             page.wait_for_timeout(1200)
 
+        if not rows:
+            print("[ERROR] 상품 카드가 0개여서 빈 CSV와 manifest 갱신을 건너뜁니다.")
+            debug_dump_candidates(page)
+            raise RuntimeError("상품 카드 추출 결과가 없습니다. 사이트 로딩 상태와 위 DEBUG 로그를 확인하세요.")
+
         fieldnames = [
             "collected_at",
+            "store",
             "title",
             "href",
             "sold_out",
             "remaining_count",
             "total_count",
+            "price_krw",
             "stock_state",
             "status_text",
             "raw_text",
