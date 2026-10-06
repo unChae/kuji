@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LiveKuji Dashboard</title>
+  <title>LiveKuji 판매 이력 분석</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
     :root {
       --bg: #0f172a;
@@ -22,53 +23,54 @@
 
     body {
       margin: 0;
-      font-family: Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: linear-gradient(180deg, #020817, #0f172a 30%, #111827);
       color: var(--text);
     }
 
     .container {
-      max-width: 1200px;
+      max-width: 1400px;
       margin: 0 auto;
       padding: 32px 20px 60px;
     }
 
-    h1 {
-      margin: 0 0 10px;
-      font-size: 2rem;
-    }
+    h1 { margin: 0 0 10px; font-size: 2rem; }
+    .sub { color: var(--muted); margin-bottom: 26px; }
 
-    .sub {
-      color: var(--muted);
-      margin-bottom: 26px;
-    }
-
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 16px;
+    .tabs {
+      display: flex;
+      gap: 8px;
       margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
     }
 
-    .card {
-      background: rgba(17, 24, 39, 0.9);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 18px 16px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    }
-
-    .label {
-      font-size: 12px;
+    .tab-btn {
+      background: none;
+      border: none;
       color: var(--muted);
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 8px;
+      padding: 12px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
     }
 
-    .value {
-      font-size: 28px;
-      font-weight: 700;
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
     }
 
     .panel {
@@ -84,23 +86,44 @@
       font-size: 1.1rem;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
+    .card {
+      background: rgba(17, 24, 39, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
     }
 
-    th, td {
-      text-align: left;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      vertical-align: top;
+    .card:hover {
+      border-color: var(--accent);
+      background: rgba(17, 24, 39, 0.95);
     }
 
-    th {
-      color: var(--muted);
+    .card.selected {
+      border-color: var(--accent);
+      background: rgba(34, 197, 94, 0.08);
+    }
+
+    .card-title {
       font-weight: 600;
-      background: rgba(15, 23, 42, 0.8);
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    .card-meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 400px;
+      margin: 24px 0;
     }
 
     .pill {
@@ -114,107 +137,130 @@
       border: 1px solid rgba(34, 197, 94, 0.4);
     }
 
-    .pill.warn {
-      background: rgba(245, 158, 11, 0.12);
-      color: #fcd34d;
-      border-color: rgba(245, 158, 11, 0.4);
-    }
-
     .pill.danger {
       background: rgba(239, 68, 68, 0.14);
       color: #fecaca;
       border-color: rgba(239, 68, 68, 0.35);
     }
 
-    .muted { color: var(--muted); }
-    .up { color: #86efac; }
-    .down { color: #fca5a5; }
-
-    .select-wrap {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
+    .pill.warn {
+      background: rgba(245, 158, 11, 0.12);
+      color: #fcd34d;
+      border-color: rgba(245, 158, 11, 0.4);
     }
 
-    select {
-      background: var(--panel-2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 8px;
+    .muted { color: var(--muted); }
+    .empty { padding: 40px 20px; text-align: center; color: var(--muted); }
+
+    .list-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    th, td {
+      text-align: left;
       padding: 8px 12px;
-      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    .info-box {
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+      color: #bfdbfe;
+      font-size: 13px;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>LiveKuji 변화 대시보드</h1>
-    <div class="sub">신규 항목, 재고 변화, 품절 여부를 한눈에 확인합니다.</div>
+    <h1>LiveKuji 판매 이력 분석</h1>
+    <div class="sub">상품별 재고 변화와 판매 완료 이력을 추적합니다</div>
 
-    <div class="select-wrap">
-      <label for="snapshotSelect">스냅샷 선택</label>
-      <select id="snapshotSelect"></select>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="live">판매중 상품</button>
+      <button class="tab-btn" data-tab="completed">판매완료 상품</button>
+      <button class="tab-btn" data-tab="history">전체 이력</button>
     </div>
 
-    <div class="cards" id="summaryCards"></div>
-
-    <div class="panel">
-      <h2>변화 표</h2>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>상품명</th>
-              <th>이전</th>
-              <th>현재</th>
-              <th>변화</th>
-              <th>상태</th>
-            </tr>
-          </thead>
-          <tbody id="changeTableBody"></tbody>
-        </table>
+    <div id="live" class="tab-content active">
+      <div class="info-box">
+        최근 15개 스냅샷에서 계속 나타나는 상품들의 재고 변화를 그래프로 확인합니다.
+      </div>
+      <div class="panel">
+        <h2>판매중 상품 목록</h2>
+        <div class="list-container" id="liveList"></div>
+      </div>
+      <div class="panel">
+        <h2>선택한 상품 재고 변화</h2>
+        <div id="liveChartContainer">
+          <div class="empty">상품을 선택해주세요</div>
+        </div>
       </div>
     </div>
 
-    <div class="panel">
-      <h2>신규 추가 항목</h2>
-      <div style="overflow-x:auto;">
+    <div id="completed" class="tab-content">
+      <div class="info-box">
+        최근 스냅샷에는 없지만 이전 스냅샷에는 있었던 상품들입니다. 판매 시작부터 완료까지의 이력을 확인할 수 있습니다.
+      </div>
+      <div class="panel">
+        <h2>판매완료 상품 목록</h2>
+        <div class="list-container" id="completedList"></div>
+      </div>
+      <div class="panel">
+        <h2>선택한 상품 판매 이력</h2>
+        <div id="completedChartContainer">
+          <div class="empty">상품을 선택해주세요</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="history" class="tab-content">
+      <div class="info-box">
+        최근 스냅샷 기준 모든 상품의 현황을 표로 확인합니다.
+      </div>
+      <div class="panel">
+        <h2>최근 스냅샷: <span id="latestSnapshotName"></span></h2>
         <table>
           <thead>
             <tr>
               <th>상품명</th>
               <th>남은 수량</th>
               <th>총 수량</th>
+              <th>판매율</th>
               <th>상태</th>
             </tr>
           </thead>
-          <tbody id="newItemsBody"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>최신 스냅샷</h2>
-      <div style="overflow-x:auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>상품명</th>
-              <th>남은 수량</th>
-              <th>총 수량</th>
-              <th>품절</th>
-              <th>수집시각</th>
-            </tr>
-          </thead>
-          <tbody id="latestTableBody"></tbody>
+          <tbody id="historyTable"></tbody>
         </table>
       </div>
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script>
+    let snapshots = [];
+    let currentLiveChart = null;
+    let currentCompletedChart = null;
+
     function csvToRows(text) {
       const rows = [];
       let row = [];
@@ -223,7 +269,6 @@
 
       for (let i = 0; i < text.length; i += 1) {
         const ch = text[i];
-
         if (ch === '"') {
           if (inQuotes && text[i + 1] === '"') {
             value += '"';
@@ -235,14 +280,10 @@
           row.push(value);
           value = '';
         } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
-          if (ch === '\r' && text[i + 1] === '\n') {
-            i += 1;
-          }
+          if (ch === '\r' && text[i + 1] === '\n') i += 1;
           row.push(value);
           const trimmed = row.map(cell => cell.trim());
-          if (trimmed.some(cell => cell !== '')) {
-            rows.push(trimmed);
-          }
+          if (trimmed.some(cell => cell !== '')) rows.push(trimmed);
           row = [];
           value = '';
         } else {
@@ -253,9 +294,7 @@
       if (value !== '' || row.length > 0) {
         row.push(value);
         const trimmed = row.map(cell => cell.trim());
-        if (trimmed.some(cell => cell !== '')) {
-          rows.push(trimmed);
-        }
+        if (trimmed.some(cell => cell !== '')) rows.push(trimmed);
       }
 
       return rows;
@@ -264,8 +303,7 @@
     function parseCSV(text) {
       const rows = csvToRows(text);
       if (!rows.length) return [];
-
-      const headers = rows[0].map(header => header.trim());
+      const headers = rows[0].map(h => h.trim());
       return rows.slice(1).map(row => {
         const record = {};
         headers.forEach((header, idx) => {
@@ -276,190 +314,290 @@
     }
 
     function normalizeItem(item) {
-      const title = (item.title || '').trim();
-      const remaining = Number(item.remaining_count || item.remaining || 0);
-      const total = Number(item.total_count || item.total || 0);
-      const soldOut = String(item.sold_out || '').toLowerCase() === 'true';
       return {
         ...item,
-        title,
-        remaining,
-        total,
-        soldOut,
+        title: (item.title || '').trim(),
+        remaining: Number(item.remaining_count || 0),
+        total: Number(item.total_count || 0),
+        soldOut: String(item.sold_out || '').toLowerCase() === 'true',
+        collected_at: item.collected_at || '',
       };
     }
 
     function keyForItem(item) {
-      return (item.title || '').trim().toLowerCase();
-    }
-
-    function buildPrevMap(rows) {
-      return new Map(rows.map(row => [keyForItem(row), row]));
+      return (item.title || '').toLowerCase();
     }
 
     async function loadSnapshots() {
       const manifestResp = await fetch('data/manifest.json');
-      if (!manifestResp.ok) {
-        throw new Error('manifest.json not found');
-      }
+      if (!manifestResp.ok) throw new Error('manifest.json not found');
 
       const manifest = await manifestResp.json();
-      const snapshots = [];
+      const loaded = [];
 
       for (const file of manifest) {
         const response = await fetch(`data/${file}`);
-        if (!response.ok) {
-          continue;
-        }
+        if (!response.ok) continue;
         const csv = await response.text();
         const rows = parseCSV(csv).map(normalizeItem);
-        snapshots.push({ file, rows });
+        loaded.push({ file, rows });
       }
 
-      snapshots.sort((a, b) => b.file.localeCompare(a.file));
-      return snapshots;
+      loaded.sort((a, b) => b.file.localeCompare(a.file));
+      return loaded.slice(0, 15);
     }
 
-    function renderSummary(latest, prev) {
-      const prevMap = prev ? buildPrevMap(prev.rows) : new Map();
-      const total = latest.rows.length;
-      const soldOut = latest.rows.filter(item => item.soldOut).length;
-      const newItems = prev ? latest.rows.filter(item => !prevMap.has(keyForItem(item))).length : total;
-      const changed = prev ? latest.rows.filter(item => {
-        const prevItem = prevMap.get(keyForItem(item));
-        if (!prevItem) return false;
-        return Number(prevItem.remaining_count || prevItem.remaining || 0) !== Number(item.remaining_count || item.remaining || 0)
-          || String(prevItem.sold_out || '').toLowerCase() !== String(item.sold_out || '').toLowerCase();
-      }).length : 0;
+    function getTimelineForItem(title, snaps) {
+      const data = snaps
+        .map(snap => {
+          const item = snap.rows.find(r => keyForItem(r) === keyForItem({ title }));
+          return {
+            file: snap.file,
+            item: item,
+          };
+        })
+        .reverse();
 
-      const cards = [
-        { label: '총 품목', value: total },
-        { label: '품절 수', value: soldOut },
-        { label: '신규 항목', value: newItems },
-        { label: '변화 항목', value: changed }
-      ];
+      return data;
+    }
 
-      document.getElementById('summaryCards').innerHTML = cards.map(card => `
-        <div class="card">
-          <div class="label">${card.label}</div>
-          <div class="value">${card.value}</div>
+    function createLineChart(containerId, title, timeline, label) {
+      const ctx = document.getElementById(containerId);
+      if (!ctx) return null;
+
+      if (currentLiveChart && containerId === 'liveChart') {
+        currentLiveChart.destroy();
+      }
+      if (currentCompletedChart && containerId === 'completedChart') {
+        currentCompletedChart.destroy();
+      }
+
+      const labels = timeline.map(t => t.file);
+      const remainingData = timeline.map(t => t.item ? t.item.remaining : null);
+      const totalData = timeline.map(t => t.item ? t.item.total : null);
+
+      const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: '남은 수량',
+              data: remainingData,
+              borderColor: '#22c55e',
+              backgroundColor: 'rgba(34, 197, 94, 0.1)',
+              tension: 0.3,
+              fill: true,
+              pointRadius: 4,
+              pointBackgroundColor: '#22c55e',
+            },
+            {
+              label: '총 수량',
+              data: totalData,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.1)',
+              tension: 0.3,
+              fill: false,
+              borderDash: [5, 5],
+              pointRadius: 3,
+              pointBackgroundColor: '#38bdf8',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#e5e7eb' },
+            },
+            title: {
+              display: true,
+              text: title,
+              color: '#e5e7eb',
+            },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#94a3b8' },
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+            },
+            x: {
+              ticks: { color: '#94a3b8' },
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+            },
+          },
+        },
+      });
+
+      if (containerId === 'liveChart') currentLiveChart = chart;
+      if (containerId === 'completedChart') currentCompletedChart = chart;
+
+      return chart;
+    }
+
+    function renderLiveList() {
+      const latest = snapshots[0];
+      if (!latest) return;
+
+      const liveList = document.getElementById('liveList');
+      const items = latest.rows.filter(r => !r.soldOut);
+
+      if (!items.length) {
+        liveList.innerHTML = '<div class="empty">판매중인 상품이 없습니다</div>';
+        return;
+      }
+
+      liveList.innerHTML = items.map((item, idx) => `
+        <div class="card" onclick="selectLiveItem(${idx})">
+          <div class="card-title">${item.title}</div>
+          <div class="card-meta">
+            <span>남은 수량: ${item.remaining} / ${item.total}</span>
+            <span>${Math.round((item.remaining / item.total) * 100)}%</span>
+          </div>
         </div>
       `).join('');
     }
 
-    function renderChangeTable(latest, prev) {
-      const tbody = document.getElementById('changeTableBody');
-      if (!prev) {
-        tbody.innerHTML = '<tr><td colspan="5" class="muted">비교 대상 스냅샷이 없습니다.</td></tr>';
+    function renderCompletedList() {
+      const latest = snapshots[0];
+      if (!latest) return;
+
+      const completedList = document.getElementById('completedList');
+
+      // 최신 CSV에서 sold_out이 True인 항목들
+      const soldOutItems = latest.rows.filter(r => r.soldOut);
+
+      // 최신 CSV에는 없지만 이전 CSV에는 있던 항목들
+      const latestKeys = new Set(latest.rows.map(r => keyForItem(r)));
+      const removedItems = [];
+      for (const snap of snapshots.slice(1)) {
+        for (const item of snap.rows) {
+          if (!latestKeys.has(keyForItem(item)) && !removedItems.find(c => keyForItem(c) === keyForItem(item))) {
+            removedItems.push(item);
+          }
+        }
+      }
+
+      const completed = [...soldOutItems, ...removedItems];
+
+      if (!completed.length) {
+        completedList.innerHTML = '<div class="empty">판매완료된 상품이 없습니다</div>';
         return;
       }
 
-      const prevMap = buildPrevMap(prev.rows);
-      const items = latest.rows.filter(item => {
-        const prevItem = prevMap.get(keyForItem(item));
-        if (!prevItem) return false;
-        return Number(prevItem.remaining_count || prevItem.remaining || 0) !== Number(item.remaining_count || item.remaining || 0)
-          || String(prevItem.sold_out || '').toLowerCase() !== String(item.sold_out || '').toLowerCase();
+      completedList.innerHTML = completed.map((item, idx) => `
+        <div class="card" onclick="selectCompletedItem(${idx})">
+          <div class="card-title">${item.title}</div>
+          <div class="card-meta">
+            <span>최종 판매 상태</span>
+            <span class="pill danger">판매완료</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectLiveItem(idx) {
+      const latest = snapshots[0];
+      const items = latest.rows.filter(r => !r.soldOut);
+      const item = items[idx];
+      if (!item) return;
+
+      const timeline = getTimelineForItem(item.title, snapshots);
+      const chart = createLineChart('liveChart', item.title, timeline, '재고 변화');
+
+      document.querySelectorAll('#liveList .card').forEach((card, i) => {
+        card.classList.toggle('selected', i === idx);
       });
 
-      if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="muted">변화된 항목이 없습니다.</td></tr>';
-        return;
+      document.getElementById('liveChartContainer').innerHTML = `
+        <canvas id="liveChart"></canvas>
+      `;
+      setTimeout(() => createLineChart('liveChart', item.title, timeline, '재고 변화'), 0);
+    }
+
+    function selectCompletedItem(idx) {
+      const latest = snapshots[0];
+
+      // 최신 CSV에서 sold_out이 True인 항목들
+      const soldOutItems = latest.rows.filter(r => r.soldOut);
+
+      // 최신 CSV에는 없지만 이전 CSV에는 있던 항목들
+      const latestKeys = new Set(latest.rows.map(r => keyForItem(r)));
+      const removedItems = [];
+      for (const snap of snapshots.slice(1)) {
+        for (const item of snap.rows) {
+          if (!latestKeys.has(keyForItem(item)) && !removedItems.find(c => keyForItem(c) === keyForItem(item))) {
+            removedItems.push(item);
+          }
+        }
       }
 
-      tbody.innerHTML = items.map(item => {
-        const prevItem = prevMap.get(keyForItem(item));
-        const before = Number(prevItem ? (prevItem.remaining_count || prevItem.remaining || 0) : 0);
-        const after = Number(item.remaining_count || item.remaining || 0);
-        const diff = after - before;
-        const dirClass = diff > 0 ? 'up' : diff < 0 ? 'down' : 'muted';
-        const status = item.soldOut ? '<span class="pill danger">품절</span>' : '<span class="pill">판매중</span>';
+      const completed = [...soldOutItems, ...removedItems];
+      const item = completed[idx];
+      if (!item) return;
 
+      const timeline = getTimelineForItem(item.title, snapshots);
+      
+      document.querySelectorAll('#completedList .card').forEach((card, i) => {
+        card.classList.toggle('selected', i === idx);
+      });
+
+      document.getElementById('completedChartContainer').innerHTML = `
+        <canvas id="completedChart"></canvas>
+      `;
+      setTimeout(() => createLineChart('completedChart', item.title, timeline, '판매 이력'), 0);
+    }
+
+    function renderHistory() {
+      const latest = snapshots[0];
+      if (!latest) return;
+
+      document.getElementById('latestSnapshotName').textContent = latest.file;
+
+      const tbody = document.getElementById('historyTable');
+      tbody.innerHTML = latest.rows.slice(0, 100).map(item => {
+        const rate = item.total > 0 ? Math.round(((item.total - item.remaining) / item.total) * 100) : 0;
+        const status = item.soldOut ? '<span class="pill danger">품절</span>' : '<span class="pill">판매중</span>';
         return `
           <tr>
-            <td>${item.title || '-'}</td>
-            <td>${before}</td>
-            <td>${after}</td>
-            <td class="${dirClass}">${diff >= 0 ? '+' : ''}${diff}</td>
+            <td>${item.title}</td>
+            <td>${item.remaining}</td>
+            <td>${item.total}</td>
+            <td>${rate}%</td>
             <td>${status}</td>
           </tr>
         `;
       }).join('');
     }
 
-    function renderNewItems(latest, prev) {
-      const tbody = document.getElementById('newItemsBody');
-      if (!prev) {
-        tbody.innerHTML = '<tr><td colspan="4" class="muted">비교 대상 스냅샷이 없습니다.</td></tr>';
-        return;
-      }
-
-      const prevMap = buildPrevMap(prev.rows);
-      const items = latest.rows.filter(item => !prevMap.has(keyForItem(item)));
-
-      if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="muted">신규 항목이 없습니다.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = items.map(item => `
-        <tr>
-          <td>${item.title || '-'}</td>
-          <td>${item.remaining}</td>
-          <td>${item.total}</td>
-          <td>${item.soldOut ? '<span class="pill danger">품절</span>' : '<span class="pill">판매중</span>'}</td>
-        </tr>
-      `).join('');
-    }
-
-    function renderLatestTable(latest) {
-      const tbody = document.getElementById('latestTableBody');
-      tbody.innerHTML = latest.rows.slice(0, 80).map(item => `
-        <tr>
-          <td>${item.title || '-'}</td>
-          <td>${item.remaining}</td>
-          <td>${item.total}</td>
-          <td>${item.soldOut ? '<span class="pill danger">품절</span>' : '<span class="pill">판매중</span>'}</td>
-          <td>${item.collected_at || '-'}</td>
-        </tr>
-      `).join('');
-    }
-
     async function init() {
-      const snapshots = await loadSnapshots();
-      const select = document.getElementById('snapshotSelect');
+      snapshots = await loadSnapshots();
 
       if (!snapshots.length) {
         document.body.innerHTML = '<div style="padding:40px;color:white;">CSV 스냅샷이 없습니다.</div>';
         return;
       }
 
-      snapshots.forEach((snapshot, index) => {
-        const option = document.createElement('option');
-        option.value = String(index);
-        option.textContent = snapshot.file;
-        select.appendChild(option);
+      renderLiveList();
+      renderCompletedList();
+      renderHistory();
+
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tab = btn.dataset.tab;
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.getElementById(tab).classList.add('active');
+          btn.classList.add('active');
+        });
       });
-
-      function renderSelected(index) {
-        const selected = snapshots[index];
-        const prev = snapshots[index + 1] || null;
-        renderSummary(selected, prev);
-        renderChangeTable(selected, prev);
-        renderNewItems(selected, prev);
-        renderLatestTable(selected);
-      }
-
-      select.addEventListener('change', (event) => {
-        renderSelected(Number(event.target.value));
-      });
-
-      renderSelected(0);
     }
 
-    init().catch(error => {
-      console.error(error);
-      document.body.innerHTML = '<div style="padding:40px;color:white;">대시보드를 불러오지 못했습니다. data/manifest.json과 CSV 파일을 확인해주세요.</div>';
+    init().catch(err => {
+      console.error(err);
+      document.body.innerHTML = '<div style="padding:40px;color:white;">대시보드를 불러오지 못했습니다. 콘솔을 확인해주세요.</div>';
     });
   </script>
 </body>
