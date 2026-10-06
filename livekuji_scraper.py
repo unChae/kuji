@@ -423,6 +423,13 @@ def main():
 
 
 if __name__ == "__main__":
+    # Use UTF-8 for Windows console/log output; escape any unsupported characters
+    # so result logging cannot fail after the CSV and manifest have been saved.
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
     try:
         main()
     except Exception as e:
