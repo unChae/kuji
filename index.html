@@ -46,12 +46,18 @@
 
     .sales-controls {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      gap: 16px;
       margin-bottom: 12px;
       color: var(--muted);
       font-size: 14px;
+    }
+
+    .sales-period-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
     .sales-controls select {
@@ -77,6 +83,55 @@
     }
 
     .sales-loading[hidden] { display: none; }
+
+    .sales-detail-button,
+    .dialog-close {
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      border-radius: 8px;
+      padding: 9px 14px;
+      background: rgba(56, 189, 248, 0.12);
+      color: #bae6fd;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .sales-detail-button:hover,
+    .dialog-close:hover { background: rgba(56, 189, 248, 0.22); }
+
+    .sales-dialog {
+      width: min(900px, calc(100vw - 32px));
+      max-height: min(82vh, 800px);
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+    }
+
+    .sales-dialog::backdrop { background: rgba(2, 8, 23, 0.78); }
+
+    .sales-dialog-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 20px 22px 12px;
+    }
+
+    .sales-dialog-header h2 { margin: 0 0 6px; font-size: 1.2rem; }
+    .sales-dialog-header p { margin: 0; font-size: 13px; }
+    .sales-dialog-content { max-height: calc(82vh - 100px); overflow: auto; padding: 0 22px 22px; }
+    .sales-dialog table { min-width: 560px; }
+    .sales-dialog td:nth-child(3), .sales-dialog td:nth-child(4) { white-space: nowrap; }
+
+    @media (max-width: 640px) {
+      .sales-controls { align-items: flex-start; flex-wrap: wrap; }
+      .sales-period-controls { width: 100%; flex-wrap: wrap; }
+      .sales-period-controls select { flex: 1; min-width: 160px; }
+      .sales-dialog-header, .sales-dialog-content { padding-left: 14px; padding-right: 14px; }
+    }
 
     .loading-spinner {
       width: 15px;
@@ -299,17 +354,20 @@
     <div class="sub">상품별 재고 변화와 판매 완료 이력을 추적합니다</div>
 
     <div class="sales-controls">
-      <label for="salesWindowSelect">판매량·매출 분석 기간</label>
-      <span class="sales-loading" id="salesLoading" role="status" aria-live="polite">
-        <span class="loading-spinner" aria-hidden="true"></span>
-        <span id="salesLoadingText">CSV 불러와 계산 중...</span>
-      </span>
-      <select id="salesWindowSelect" disabled>
-        <option value="24">6시간 · 24개 CSV</option>
-        <option value="48">12시간 · 48개 CSV</option>
-        <option value="72">18시간 · 72개 CSV</option>
-        <option value="96">24시간 · 96개 CSV</option>
-      </select>
+      <button type="button" class="sales-detail-button" id="openSalesBreakdown">상품별 판매 내역 보기</button>
+      <div class="sales-period-controls">
+        <label for="salesWindowSelect">판매량·매출 분석 기간</label>
+        <span class="sales-loading" id="salesLoading" role="status" aria-live="polite">
+          <span class="loading-spinner" aria-hidden="true"></span>
+          <span id="salesLoadingText">CSV 불러와 계산 중...</span>
+        </span>
+        <select id="salesWindowSelect" disabled>
+          <option value="24">6시간 · 24개 CSV</option>
+          <option value="48">12시간 · 48개 CSV</option>
+          <option value="72">18시간 · 72개 CSV</option>
+          <option value="96">24시간 · 96개 CSV</option>
+        </select>
+      </div>
     </div>
 
     <div class="summary-grid" aria-label="선택 기간 판매 추정">
@@ -324,6 +382,24 @@
         <div class="summary-note" id="revenueWindowNote"></div>
       </div>
     </div>
+
+    <dialog class="sales-dialog" id="salesBreakdownDialog" aria-labelledby="salesBreakdownTitle">
+      <div class="sales-dialog-header">
+        <div>
+          <h2 id="salesBreakdownTitle">상품별 판매 추정 내역</h2>
+          <p class="muted" id="salesBreakdownSummary"></p>
+        </div>
+        <button type="button" class="dialog-close" id="closeSalesBreakdown" aria-label="닫기">닫기</button>
+      </div>
+      <div class="sales-dialog-content">
+        <table>
+          <thead>
+            <tr><th>상품명</th><th>점포</th><th>판매 추정</th><th>매출 추정</th></tr>
+          </thead>
+          <tbody id="salesBreakdownBody"></tbody>
+        </table>
+      </div>
+    </dialog>
 
     <div class="panel">
       <h2 id="salesTrendTitle">최근 6시간 누적 판매 추정</h2>
@@ -509,6 +585,7 @@
       let soldCount = 0;
       let pricedSoldCount = 0;
       let revenueKrw = 0;
+      const breakdownByKey = new Map();
       const timeline = window.length
         ? [{ label: snapshotLabel(window[0].file), soldCount: 0, revenueKrw: 0 }]
         : [];
@@ -533,10 +610,21 @@
 
           soldCount += decrease;
           const unitPrice = current.priceKrw ?? previous.priceKrw;
+          const detail = breakdownByKey.get(key) || {
+            title: current.title || previous.title,
+            store: current.store || previous.store || '',
+            soldCount: 0,
+            pricedSoldCount: 0,
+            revenueKrw: 0,
+          };
+          detail.soldCount += decrease;
           if (unitPrice != null) {
             pricedSoldCount += decrease;
             revenueKrw += decrease * unitPrice;
+            detail.pricedSoldCount += decrease;
+            detail.revenueKrw += decrease * unitPrice;
           }
+          breakdownByKey.set(key, detail);
         }
 
         timeline.push({
@@ -552,6 +640,9 @@
         revenueKrw,
         snapshotCount: window.length,
         timeline,
+        breakdown: [...breakdownByKey.values()].sort((a, b) =>
+          b.soldCount - a.soldCount || b.revenueKrw - a.revenueKrw
+        ),
         hasAnyPrices: window.some(snapshot => snapshot.rows.some(item => item.priceKrw != null)),
       };
     }
@@ -647,6 +738,45 @@
       document.getElementById('revenueWindowNote').textContent =
         `단가 확인 판매 ${numberFormat.format(estimate.pricedSoldCount)}장분 · 가격 누락분 제외`;
       renderSalesTrend(estimate.timeline);
+      renderSalesBreakdown(estimate);
+    }
+
+    function renderSalesBreakdown(estimate) {
+      const numberFormat = new Intl.NumberFormat('ko-KR');
+      const body = document.getElementById('salesBreakdownBody');
+      const button = document.getElementById('openSalesBreakdown');
+      const hours = Math.round(salesWindowSize / 4);
+      button.textContent = `상품별 판매 내역 보기 (${estimate.breakdown.length}개 상품)`;
+      document.getElementById('salesBreakdownSummary').textContent =
+        `최근 ${hours}시간 · ${numberFormat.format(estimate.soldCount)}장 판매 추정 · 매출 ₩${numberFormat.format(estimate.revenueKrw)}`;
+      body.replaceChildren();
+
+      if (!estimate.breakdown.length) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 4;
+        cell.className = 'empty';
+        cell.textContent = '선택한 기간에 재고 감소가 확인된 상품이 없습니다.';
+        row.append(cell);
+        body.append(row);
+        return;
+      }
+
+      for (const item of estimate.breakdown) {
+        const row = document.createElement('tr');
+        const title = document.createElement('td');
+        title.textContent = item.title || '(상품명 미확인)';
+        const store = document.createElement('td');
+        store.textContent = item.store || '미확인';
+        const quantity = document.createElement('td');
+        quantity.textContent = `${numberFormat.format(item.soldCount)}장`;
+        const revenue = document.createElement('td');
+        revenue.textContent = item.pricedSoldCount
+          ? `₩${numberFormat.format(item.revenueKrw)} (${numberFormat.format(item.pricedSoldCount)}/${numberFormat.format(item.soldCount)}장 단가 확인)`
+          : '가격 미확인';
+        row.append(title, store, quantity, revenue);
+        body.append(row);
+      }
     }
 
     function setSalesLoading(loading, message = 'CSV 불러와 계산 중...') {
@@ -925,6 +1055,17 @@
           document.getElementById(tab).classList.add('active');
           btn.classList.add('active');
         });
+      });
+
+      const salesBreakdownDialog = document.getElementById('salesBreakdownDialog');
+      document.getElementById('openSalesBreakdown').addEventListener('click', () => {
+        salesBreakdownDialog.showModal();
+      });
+      document.getElementById('closeSalesBreakdown').addEventListener('click', () => {
+        salesBreakdownDialog.close();
+      });
+      salesBreakdownDialog.addEventListener('click', event => {
+        if (event.target === salesBreakdownDialog) salesBreakdownDialog.close();
       });
 
       document.getElementById('salesWindowSelect').addEventListener('change', async event => {
