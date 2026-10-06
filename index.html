@@ -55,6 +55,15 @@
     .summary-value { font-size: 1.8rem; font-weight: 700; margin-top: 8px; }
     .summary-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
 
+    .sales-trend-container {
+      position: relative;
+      height: 440px;
+    }
+
+    @media (max-width: 640px) {
+      .sales-trend-container { height: 520px; }
+    }
+
     @media (max-width: 640px) {
       .summary-grid { grid-template-columns: 1fr; }
     }
@@ -108,6 +117,27 @@
       font-size: 1.1rem;
     }
 
+    .history-layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.8fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .history-layout > .panel {
+      min-width: 0;
+      margin-bottom: 0;
+    }
+
+    .history-layout .list-container {
+      max-height: 720px;
+    }
+
+    @media (max-width: 900px) {
+      .history-layout { grid-template-columns: 1fr; }
+      .history-layout .list-container { max-height: 460px; }
+    }
+
     .card {
       background: rgba(17, 24, 39, 0.9);
       border: 1px solid var(--border);
@@ -144,8 +174,12 @@
 
     .chart-container {
       position: relative;
-      height: 400px;
+      height: 720px;
       margin: 24px 0;
+    }
+
+    @media (max-width: 640px) {
+      .chart-container { height: 600px; }
     }
 
     .pill {
@@ -219,15 +253,21 @@
 
     <div class="summary-grid" aria-label="최근 스냅샷 판매 추정">
       <div class="summary-card">
-        <div class="summary-label">최근 10개 CSV 판매 수량 추정</div>
+        <div class="summary-label">최근 24개 CSV 판매 수량 추정</div>
         <div class="summary-value" id="estimatedSoldCount">-</div>
         <div class="summary-note" id="salesWindowNote"></div>
       </div>
       <div class="summary-card">
-        <div class="summary-label">최근 10개 CSV 매출 추정</div>
+        <div class="summary-label">최근 24개 CSV 매출 추정</div>
         <div class="summary-value" id="estimatedRevenue">-</div>
         <div class="summary-note" id="revenueWindowNote"></div>
       </div>
+    </div>
+
+    <div class="panel">
+      <h2>최근 24개 CSV 누적 판매 추정</h2>
+      <div class="info-box">왼쪽 축은 누적 판매 수량, 오른쪽 축은 누적 매출입니다. 확인 가능한 연속 스냅샷의 재고 감소분을 누적해 표시합니다.</div>
+      <div class="sales-trend-container"><canvas id="salesTrendChart"></canvas></div>
     </div>
 
     <div class="tabs">
@@ -238,16 +278,18 @@
 
     <div id="live" class="tab-content active">
       <div class="info-box">
-        최근 15개 스냅샷에서 계속 나타나는 상품들의 재고 변화를 그래프로 확인합니다.
+        최근 24개 스냅샷에서 계속 나타나는 상품들의 재고 변화를 그래프로 확인합니다.
       </div>
-      <div class="panel">
-        <h2>판매중 상품 목록</h2>
-        <div class="list-container" id="liveList"></div>
-      </div>
-      <div class="panel">
-        <h2>선택한 상품 재고 변화</h2>
-        <div id="liveChartContainer">
-          <div class="empty">상품을 선택해주세요</div>
+      <div class="history-layout">
+        <div class="panel">
+          <h2>판매중 상품 목록</h2>
+          <div class="list-container" id="liveList"></div>
+        </div>
+        <div class="panel">
+          <h2>선택한 상품 재고 변화</h2>
+          <div id="liveChartContainer">
+            <div class="empty">상품을 선택해주세요</div>
+          </div>
         </div>
       </div>
     </div>
@@ -256,14 +298,16 @@
       <div class="info-box">
         최근 스냅샷에는 없지만 이전 스냅샷에는 있었던 상품들입니다. 판매 시작부터 완료까지의 이력을 확인할 수 있습니다.
       </div>
-      <div class="panel">
-        <h2>판매완료 상품 목록</h2>
-        <div class="list-container" id="completedList"></div>
-      </div>
-      <div class="panel">
-        <h2>선택한 상품 판매 이력</h2>
-        <div id="completedChartContainer">
-          <div class="empty">상품을 선택해주세요</div>
+      <div class="history-layout">
+        <div class="panel">
+          <h2>판매완료 상품 목록</h2>
+          <div class="list-container" id="completedList"></div>
+        </div>
+        <div class="panel">
+          <h2>선택한 상품 판매 이력</h2>
+          <div id="completedChartContainer">
+            <div class="empty">상품을 선택해주세요</div>
+          </div>
         </div>
       </div>
     </div>
@@ -295,6 +339,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script>
     let snapshots = [];
+    let currentSalesTrendChart = null;
     let currentLiveChart = null;
     let currentCompletedChart = null;
 
@@ -354,42 +399,62 @@
       const rawText = item.raw_text || item.status_text || '';
       const storeMarker = rawText.match(/즉시구매|ON공식쿠지/i);
       const parsedStore = storeMarker ? rawText.slice(0, storeMarker.index) : '';
+      const priceMatches = Array.from(rawText.matchAll(/₩\s*((?:\d{1,3}(?:,\d{3})+)|\d+)/g));
+      const parsedPrice = priceMatches.length
+        ? Number(priceMatches[priceMatches.length - 1][1].replace(/,/g, ''))
+        : (item.price_krw ? Number(item.price_krw) : null);
       return {
         ...item,
         title: (item.title || '').trim(),
         store: (item.store || parsedStore).trim(),
         remaining: Number(item.remaining_count || 0),
         total: Number(item.total_count || 0),
-        priceKrw: item.price_krw ? Number(item.price_krw) : null,
+        priceKrw: Number.isFinite(parsedPrice) ? parsedPrice : null,
         soldOut: String(item.sold_out || '').toLowerCase() === 'true',
         collected_at: item.collected_at || '',
       };
     }
 
     function keyForItem(item) {
-      return (item.title || '').toLowerCase();
+      const href = (item.href || '').trim().toLowerCase();
+      if (href) return href;
+      const store = (item.store || '').trim().toLowerCase();
+      const title = (item.title || '')
+        .trim()
+        .replace(/^(?:(?:팝|미쿠지)?즉시구매공식쿠지|샵쿠지)\s*/i, '')
+        .replace(/^\d+\)\s*/, '')
+        .toLowerCase();
+      return title ? `${store}|${title}` : '';
+    }
+
+    function snapshotLabel(file) {
+      const match = file.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
+      return match ? `${match[2]}/${match[3]} ${match[4]}:${match[5]}` : file;
     }
 
     function estimateSales(snaps) {
-      const window = snaps.slice(0, 10).slice().reverse();
+      const window = snaps.slice(0, 24).slice().reverse();
       let soldCount = 0;
       let pricedSoldCount = 0;
       let revenueKrw = 0;
+      const timeline = window.length
+        ? [{ label: snapshotLabel(window[0].file), soldCount: 0, revenueKrw: 0 }]
+        : [];
 
       for (let i = 1; i < window.length; i += 1) {
-        const previousByTitle = new Map();
-        const currentByTitle = new Map();
+        const previousByKey = new Map();
+        const currentByKey = new Map();
         for (const item of window[i - 1].rows) {
           const key = keyForItem(item);
-          if (key && !previousByTitle.has(key)) previousByTitle.set(key, item);
+          if (key && !previousByKey.has(key)) previousByKey.set(key, item);
         }
         for (const item of window[i].rows) {
           const key = keyForItem(item);
-          if (key && !currentByTitle.has(key)) currentByTitle.set(key, item);
+          if (key && !currentByKey.has(key)) currentByKey.set(key, item);
         }
 
-        for (const [key, previous] of previousByTitle) {
-          const current = currentByTitle.get(key);
+        for (const [key, previous] of previousByKey) {
+          const current = currentByKey.get(key);
           if (!current) continue;
           const decrease = Math.max(previous.remaining - current.remaining, 0);
           if (decrease === 0) continue;
@@ -401,6 +466,12 @@
             revenueKrw += decrease * unitPrice;
           }
         }
+
+        timeline.push({
+          label: snapshotLabel(window[i].file),
+          soldCount,
+          revenueKrw,
+        });
       }
 
       return {
@@ -408,8 +479,83 @@
         pricedSoldCount,
         revenueKrw,
         snapshotCount: window.length,
+        timeline,
         hasAnyPrices: window.some(snapshot => snapshot.rows.some(item => item.priceKrw != null)),
       };
+    }
+
+    function renderSalesTrend(timeline) {
+      const canvas = document.getElementById('salesTrendChart');
+      if (!canvas) return;
+      if (currentSalesTrendChart) currentSalesTrendChart.destroy();
+
+      const numberFormat = new Intl.NumberFormat('ko-KR');
+      currentSalesTrendChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: timeline.map(point => point.label),
+          datasets: [
+            {
+              label: '누적 판매 수량 (장)',
+              data: timeline.map(point => point.soldCount),
+              yAxisID: 'yCount',
+              borderColor: '#22c55e',
+              backgroundColor: 'rgba(34, 197, 94, 0.12)',
+              pointRadius: 3,
+              tension: 0.25,
+            },
+            {
+              label: '누적 매출 (원)',
+              data: timeline.map(point => point.revenueKrw),
+              yAxisID: 'yRevenue',
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.12)',
+              pointRadius: 3,
+              tension: 0.25,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#e5e7eb' } },
+            tooltip: {
+              callbacks: {
+                label(context) {
+                  const value = numberFormat.format(context.parsed.y);
+                  return context.dataset.yAxisID === 'yRevenue'
+                    ? `${context.dataset.label}: ₩${value}`
+                    : `${context.dataset.label}: ${value}`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: '#94a3b8', maxTicksLimit: 12, maxRotation: 0 },
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+            },
+            yCount: {
+              type: 'linear',
+              position: 'left',
+              beginAtZero: true,
+              title: { display: true, text: '누적 수량 (장)', color: '#22c55e' },
+              ticks: { color: '#94a3b8', precision: 0 },
+              grid: { color: 'rgba(148, 163, 184, 0.1)' },
+            },
+            yRevenue: {
+              type: 'linear',
+              position: 'right',
+              beginAtZero: true,
+              title: { display: true, text: '누적 매출 (원)', color: '#38bdf8' },
+              ticks: { color: '#94a3b8', callback: value => `₩${numberFormat.format(value)}` },
+              grid: { drawOnChartArea: false },
+            },
+          },
+        },
+      });
     }
 
     function renderSalesSummary() {
@@ -424,6 +570,7 @@
         `${estimate.snapshotCount}개 스냅샷에서 연속 기록에 모두 있는 상품의 재고 감소분 합계`;
       document.getElementById('revenueWindowNote').textContent =
         `단가 확인 판매 ${numberFormat.format(estimate.pricedSoldCount)}장분 · 가격 누락분 제외`;
+      renderSalesTrend(estimate.timeline);
     }
 
     async function loadSnapshots() {
@@ -442,16 +589,16 @@
       }
 
       loaded.sort((a, b) => b.file.localeCompare(a.file));
-      return loaded.slice(0, 15);
+      return loaded.slice(0, 24);
     }
 
-    function getTimelineForItem(title, snaps) {
+    function getTimelineForItem(item, snaps) {
       const data = snaps
         .map(snap => {
-          const item = snap.rows.find(r => keyForItem(r) === keyForItem({ title }));
+          const match = snap.rows.find(r => keyForItem(r) === keyForItem(item));
           return {
             file: snap.file,
-            item: item,
+            item: match,
           };
         })
         .reverse();
@@ -470,7 +617,7 @@
         currentCompletedChart.destroy();
       }
 
-      const labels = timeline.map(t => t.file);
+      const labels = timeline.map(t => snapshotLabel(t.file));
       const remainingData = timeline.map(t => t.item ? t.item.remaining : null);
       const totalData = timeline.map(t => t.item ? t.item.total : null);
 
@@ -518,7 +665,7 @@
           scales: {
             y: {
               beginAtZero: true,
-              ticks: { color: '#94a3b8' },
+              ticks: { color: '#94a3b8', stepSize: 5, precision: 0 },
               grid: { color: 'rgba(148, 163, 184, 0.1)' },
             },
             x: {
@@ -604,7 +751,7 @@
       const item = items[idx];
       if (!item) return;
 
-      const timeline = getTimelineForItem(item.title, snapshots);
+      const timeline = getTimelineForItem(item, snapshots);
       const chart = createLineChart('liveChart', item.title, timeline, '재고 변화');
 
       document.querySelectorAll('#liveList .card').forEach((card, i) => {
@@ -612,7 +759,7 @@
       });
 
       document.getElementById('liveChartContainer').innerHTML = `
-        <canvas id="liveChart"></canvas>
+        <div class="chart-container"><canvas id="liveChart"></canvas></div>
       `;
       setTimeout(() => createLineChart('liveChart', item.title, timeline, '재고 변화'), 0);
     }
@@ -638,14 +785,14 @@
       const item = completed[idx];
       if (!item) return;
 
-      const timeline = getTimelineForItem(item.title, snapshots);
+      const timeline = getTimelineForItem(item, snapshots);
       
       document.querySelectorAll('#completedList .card').forEach((card, i) => {
         card.classList.toggle('selected', i === idx);
       });
 
       document.getElementById('completedChartContainer').innerHTML = `
-        <canvas id="completedChart"></canvas>
+        <div class="chart-container"><canvas id="completedChart"></canvas></div>
       `;
       setTimeout(() => createLineChart('completedChart', item.title, timeline, '판매 이력'), 0);
     }

@@ -124,10 +124,14 @@ def extract_cards(page):
               const soldOutText = /품절|SOLD OUT|out of stock/i.test(fullText);
               if (!stockMatch && !soldOutText) continue;
 
-              // 가격은 원화 기준 정수로 저장한다 (예: ₩13,000 / 1장, 13,000원).
-              const priceMatch = fullText.match(/₩\s*([\d,]+)|([\d,]+)\s*(?:원|KRW)/i);
-              const priceKrw = priceMatch
-                ? parseInt((priceMatch[1] || priceMatch[2]).replace(/,/g, ''), 10)
+              // 가격은 원화 기준 정수로 저장한다. 할인 표기(₩18,0006%₩17,000)는
+              // 가격과 할인율 사이 공백이 없으므로, 쉼표 단위에 맞춰 숫자를 읽고
+              // 마지막 금액(실제 결제 단가)을 선택한다.
+              const priceMatches = Array.from(
+                fullText.matchAll(/₩\s*((?:\d{1,3}(?:,\d{3})+)|\d+)/g)
+              );
+              const priceKrw = priceMatches.length
+                ? parseInt(priceMatches[priceMatches.length - 1][1].replace(/,/g, ''), 10)
                 : null;
               let storeSourceText = fullText;
               if (!/즉시구매|ON공식쿠지/i.test(storeSourceText)) {
@@ -158,6 +162,7 @@ def extract_cards(page):
                 ? fullText.split(/남은\s*\d+\s*\/\s*\d+\s*장/i)[0]
                 : fullText.split(/품절|SOLD OUT|out of stock/i)[0];
               let title = titlePart
+                .replace(/^(?:(?:팝|미쿠지)?즉시구매공식쿠지|샵쿠지)\\s*/i, '')
                 .replace(/^(피가쿠지|KUJI-PLAY|즉시구매|공식쿠지|2쿠지|쿠지|구매|공식|마켓|토이|모리|라이브온|LIVE ON|OZ)+\\s*/gi, '')
                 .replace(/^(set\\.|set\\))+\\s*/gi, '')
                 .replace(/^\\d+\\)\\s*/g, '')
