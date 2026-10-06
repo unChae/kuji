@@ -164,8 +164,7 @@ def extract_cards(page):
               let title = titlePart
                 .replace(/^(?:(?:팝|미쿠지)?즉시구매공식쿠지|샵쿠지)\\s*/i, '')
                 .replace(/^(피가쿠지|KUJI-PLAY|즉시구매|공식쿠지|2쿠지|쿠지|구매|공식|마켓|토이|모리|라이브온|LIVE ON|OZ)+\\s*/gi, '')
-                .replace(/^(set\\.|set\\))+\\s*/gi, '')
-                .replace(/^\\d+\\)\\s*/g, '')
+                .replace(/^set(?:\\.|\\))\\s*\\d+\\)\\s*/gi, '')
                 .replace(/\\s*(할인|discount|off|\\d+%)/gi, '')
                 .replace(/[^가-힣A-Za-z0-9\\s~().!\\-]/g, '')
                 .replace(/\\s+/g, ' ')

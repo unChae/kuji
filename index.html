@@ -485,9 +485,18 @@
       const title = (item.title || '')
         .trim()
         .replace(/^(?:(?:팝|미쿠지)?즉시구매공식쿠지|샵쿠지)\s*/i, '')
-        .replace(/^\d+\)\s*/, '')
         .toLowerCase();
       return title ? `${store}|${title}` : '';
+    }
+
+    function uniqueItems(items) {
+      const seen = new Set();
+      return items.filter(item => {
+        const key = keyForItem(item);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     }
 
     function snapshotLabel(file) {
@@ -759,7 +768,7 @@
       if (!latest) return;
 
       const liveList = document.getElementById('liveList');
-      const items = latest.rows.filter(r => !r.soldOut);
+      const items = uniqueItems(latest.rows.filter(r => !r.soldOut));
 
       if (!items.length) {
         liveList.innerHTML = '<div class="empty">판매중인 상품이 없습니다</div>';
@@ -799,7 +808,7 @@
         }
       }
 
-      const completed = [...soldOutItems, ...removedItems];
+      const completed = uniqueItems([...soldOutItems, ...removedItems]);
 
       if (!completed.length) {
         completedList.innerHTML = '<div class="empty">판매완료된 상품이 없습니다</div>';
@@ -819,7 +828,7 @@
 
     function selectLiveItem(idx) {
       const latest = snapshots[0];
-      const items = latest.rows.filter(r => !r.soldOut);
+      const items = uniqueItems(latest.rows.filter(r => !r.soldOut));
       const item = items[idx];
       if (!item) return;
 
@@ -853,7 +862,7 @@
         }
       }
 
-      const completed = [...soldOutItems, ...removedItems];
+      const completed = uniqueItems([...soldOutItems, ...removedItems]);
       const item = completed[idx];
       if (!item) return;
 
