@@ -332,9 +332,9 @@ def clean_card(entry):
 def main():
     output_path = csv_output_path()
     with sync_playwright() as p:
-        # GitHub Actions has no display; retain the visible browser for local runs.
-        headless = os.environ.get("CI", "").lower() == "true"
-        browser = p.chromium.launch(headless=headless, args=["--start-maximized"])
+        # Run invisibly by default. Set LIVEKUJI_HEADLESS=false to show the browser while debugging.
+        headless = os.environ.get("LIVEKUJI_HEADLESS", "true").lower() not in {"0", "false", "no"}
+        browser = p.chromium.launch(headless=headless)
         page = browser.new_page(viewport={"width": 1600, "height": 2200}, locale="ko-KR")
         page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
         print("[LOAD] 페이지 로드 완료, 상품 카드 로딩 대기 중...")
